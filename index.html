@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BFT Tracker">
+  <title>BFT PXI Tracker</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      min-height: 100vh;
+      color: #f1f5f9;
+      overflow-x: hidden;
+    }
+    
+    #root {
+      width: 100%;
+      min-height: 100vh;
+    }
+    
+    input::placeholder {
+      color: #64748b;
+    }
+    
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function BFTTracker() {
+      const [currentDate, setCurrentDate] = useState(new Date());
+      const [sessions, setSessions] = useState(() => {
+        const saved = localStorage.getItem('bftSessions');
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            const calendarSessions = parsed.filter(s => s.date);
+            if (calendarSessions.length > 0) {
+              return calendarSessions;
+            }
+          } catch {
+            // Continue
+          }
+        }
+        return [];
+      });
+      const [selectedDate, setSelectedDate] = useState(null);
+      const [showModal, setShowModal] = useState(false);
+      const [inputPXI, setInputPXI] = useState('');
+      const [modalMode, setModalMode] = useState(null);
+
+      const TARGET_PXI = 1800;
+
+      useEffect(() => {
+        try {
+          localStorage.setItem('bftSessions', JSON.stringify(sessions));
+        } catch (e) {
+          console.log('localStorage unavailable');
+        }
+      }, [sessions]);
+
+      const totalPXI = sessions.reduce((sum, s) => sum + (s.pxi ? s.pxi : 0), 0);
+      const remainingPXI = Math.max(0, TARGET_PXI - totalPXI);
+      const completedSessions = sessions.filter(s => s.pxi).length;
+      const plannedSessions = sessions.filter(s => !s.pxi).length;
+      const totalPlannedForMonth = completedSessions + plannedSessions;
+      const pendingSessions = plannedSessions;
+      const avgNeeded = pendingSessions > 0 ? Math.ceil(remainingPXI / pendingSessions) : 0;
+      const targetReached = totalPXI >= TARGET_PXI;
+
+      const monthString = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const daysArray = [];
+      
+      for (let i = 0; i < firstDay; i++) {
+        daysArray.push(null);
+      }
+      for (let i = 1; i <= daysInMonth; i++) {
+        daysArray.push(i);
+      }
+
+      const getSessionForDate = (day) => {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        return sessions.find(s => s.date === dateStr);
+      };
+
+      const handleDateClick = (day) => {
+        if (day) {
+          setSelectedDate(day);
+          setShowModal(true);
+          setModalMode(null);
+          const session = getSessionForDate(day);
+          setInputPXI(session && session.pxi ? session.pxi.toString() : '');
+        }
+      };
+
+      const saveSession = () => {
+        if (!selectedDate || !modalMode) return;
+        
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`;
+        const existingIndex = sessions.findIndex(s => s.date === dateStr);
+        
+        if (modalMode === 'logged') {
+          if (!inputPXI || isNaN(inputPXI)) return;
+          
+          if (existingIndex > -1) {
+            const newSessions = [...sessions];
+            newSessions[existingIndex] = { ...newSessions[existingIndex], pxi: parseInt(inputPXI) };
+            setSessions(newSessions);
+          } else {
+            setSessions([...sessions, { id: Date.now(), date: dateStr, pxi: parseInt(inputPXI) }]);
+          }
+        } else if (modalMode === 'planned') {
+          if (existingIndex > -1 && !sessions[existingIndex].pxi) {
+            setSessions(sessions.filter((_, i) => i !== existingIndex));
+          } else if (existingIndex === -1) {
+            setSessions([...sessions, { id: Date.now(), date: dateStr }]);
+          }
+        }
+        
+        closeModal();
+      };
+
+      const removeSession = () => {
+        if (selectedDate) {
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(selectedDate).padStart(2, '0')}`;
+          setSessions(sessions.filter(s => s.date !== dateStr));
+          closeModal();
+        }
+      };
+
+      const closeModal = () => {
+        setShowModal(false);
+        setSelectedDate(null);
+        setInputPXI('');
+        setModalMode(null);
+      };
+
+      const previousMonth = () => {
+        setCurrentDate(new Date(year, month - 1, 1));
+      };
+
+      const nextMonth = () => {
+        setCurrentDate(new Date(year, month + 1, 1));
+      };
+
+      const handleKeyPress = (e) => {
+        if (e.key === 'Enter') saveSession();
+        if (e.key === 'Escape') closeModal();
+      };
+
+      const progressPercent = Math.min(100, (totalPXI / TARGET_PXI) * 100);
+      const sessionForSelectedDate = selectedDate ? getSessionForDate(selectedDate) : null;
+
+      return (
+        <div style={{
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+          minHeight: '100vh',
+          color: '#f1f5f9',
+          fontFamily: '"Geist", -apple-system, BlinkMacSystemFont, sans-serif',
+          padding: '20px',
+          paddingTop: '40px',
+        }}>
+          <div style={{ marginBottom: '32px', textAlign: 'center' }}>
+            <div style={{
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#94a3b8',
+              letterSpacing: '1px',
+              textTransform: 'uppercase',
+              marginBottom: '8px'
+            }}>
+              BFT MONTHLY TRACKER
+            </div>
+            <h1 style={{
+              fontSize: '36px',
+              fontWeight: '700',
+              margin: '0 0 4px 0',
+              background: 'linear-gradient(135deg, #ff6b35 0%, #ff8c42 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text'
+            }}>
+              {monthString}
+            </h1>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '16px',
+            marginBottom: '32px',
+          }}>
+            <div style={{
+              background: 'rgba(15, 23, 42, 0.5)',
+              border: '1px solid rgba(255, 107, 53, 0.2)',
+              borderRadius: '20px',
+              padding: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backdropFilter: 'blur(10px)',
+              position: 'relative',
+              overflow: 'hidden'
+            }}>
+              <svg width="140" height="140" viewBox="0 0 140 140" style={{ transform: 'rotate(-90deg)' }}>
+                <circle cx="70" cy="70" r="60" fill="none" stroke="rgba(255, 107, 53, 0.1)" strokeWidth="8" />
+                <circle
+                  cx="70"
+                  cy="70"
+                  r="60"
+                  fill="none"
+                  stroke="url(#grad)"
+                  strokeWidth="8"
+                  strokeDasharray={`${(progressPercent / 100) * 376.99} 376.99`}
+                  style={{ transition: 'stroke-dasharray 0.6s ease' }}
+                />
+                <defs>
+                  <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#ff6b35" />
+                    <stop offset="100%" stopColor="#ff8c42" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <div style={{
+                position: 'absolute',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#ff6b35' }}>
+                  {totalPXI}
+                </div>
+                <div style={{ fontSize: '12px', color: '#94a3b8' }}>of {TARGET_PXI}</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.5)',
+                border: '1px solid rgba(255, 107, 53, 0.2)',
+                borderRadius: '16px',
+                padding: '16px',
+                backdropFilter: 'blur(10px)',
+              }}>
+                <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>Remaining</div>
+                <div style={{
+                  fontSize: '24px',
+                  fontWeight: '700',
+                  color: targetReached ? '#10b981' : '#ff6b35'
+                }}>
+                  {targetReached ? '✓ Done!' : remainingPXI}
+                </div>
+              </div>
+
+              <div style={{
+                background: 'rgba(15, 23, 42, 0.5)',
+                border: '1px solid rgba(255, 107, 53, 0.2)',
+                borderRadius: '16px',
+                padding: '16px',
+                backdropFilter: 'blur(10px)',
+              }}>
+                <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '4px' }}>Sessions</div>
+                <div style={{ fontSize: '18px', fontWeight: '600' }}>
+                  <span style={{ color: '#22c55e' }}>{completedSessions}</span>
+                  <span style={{ color: '#64748b' }}> / </span>
+                  <span style={{ color: '#eab308' }}>{totalPlannedForMonth}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {pendingSessions > 0 && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              borderRadius: '16px',
+              padding: '20px',
+              marginBottom: '32px',
+              backdropFilter: 'blur(10px)',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '12px', color: '#10b981', fontWeight: '600', marginBottom: '8px' }}>
+                AVG PXI PER SESSION
+              </div>
+              <div style={{ fontSize: '32px', fontWeight: '700', color: '#10b981' }}>
+                {avgNeeded}
+              </div>
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                for {pendingSessions} remaining session{pendingSessions !== 1 ? 's' : ''}
+              </div>
+            </div>
+          )}
+
+          <div style={{
+            background: 'rgba(15, 23, 42, 0.5)',
+            border: '1px solid rgba(255, 107, 53, 0.2)',
+            borderRadius: '16px',
+            padding: '24px',
+            backdropFilter: 'blur(10px)',
+          }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '24px'
+            }}>
+              <button
+                onClick={previousMonth}
+                style={{
+                  background: 'rgba(255, 107, 53, 0.2)',
+                  border: '1px solid rgba(255, 107, 53, 0.3)',
+                  color: '#ff6b35',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  transition: 'all 0.2s'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 107, 53, 0.3)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 107, 53, 0.5)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 107, 53, 0.2)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 107, 53, 0.3)';
+                }}
+              >
+                ← Prev
+              </button>
+              <h2 style={{ fontSize: '16px', fontWeight: '600', margin: 0, flex: 1, textAlign: 'center' }}>
+                {monthString}
+              </h2>
+              <button
+                onClick={nextMonth}
+                style={{
+                  background: 'rgba(255, 107, 53, 0.2)',
+                  border: '1px solid rgba(255, 107, 53, 0.3)',
+                  color: '#ff6b35',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '600',
+                  transition: 'all 0.2s'
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 107, 53, 0.3)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 107, 53, 0.5)';
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 107, 53, 0.2)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 107, 53, 0.3)';
+                }}
+              >
+                Next →
+              </button>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(7, 1fr)',
+              gap: '8px',
+              marginBottom: '12px'
+            }}>
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                <div
+                  key={day}
+                  style={{
+                    textAlign: 'center',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    color: '#64748b',
+                    padding: '8px'
+                  }}
+                >
+                  {day}
+                </div>
+              ))}
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(7, 1fr)',
+              gap: '8px'
+            }}>
+              {daysArray.map((day, idx) => {
+                const session = day ? getSessionForDate(day) : null;
+                const isLogged = session && session.pxi;
+                const isPlanned = session && !session.pxi;
+                
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => handleDateClick(day)}
+                    style={{
+                      aspectRatio: '1',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      background: day ? (
+                        isLogged
+                          ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(74, 222, 128, 0.1) 100%)'
+                          : isPlanned
+                          ? 'linear-gradient(135deg, rgba(234, 179, 8, 0.2) 0%, rgba(250, 204, 21, 0.1) 100%)'
+                          : 'rgba(71, 85, 105, 0.2)'
+                      ) : 'transparent',
+                      border: day ? (
+                        isLogged
+                          ? '2px solid rgba(34, 197, 94, 0.6)'
+                          : isPlanned
+                          ? '2px solid rgba(234, 179, 8, 0.6)'
+                          : '1px solid rgba(71, 85, 105, 0.3)'
+                      ) : 'none',
+                      borderRadius: '8px',
+                      cursor: day ? 'pointer' : 'default',
+                      transition: 'all 0.2s',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}
+                    onMouseOver={(e) => {
+                      if (day) {
+                        const borderColor = isLogged ? 'rgba(34, 197, 94, 0.8)' : isPlanned ? 'rgba(234, 179, 8, 0.8)' : 'rgba(255, 107, 53, 0.5)';
+                        const bgColor = isLogged ? 'rgba(34, 197, 94, 0.15)' : isPlanned ? 'rgba(234, 179, 8, 0.15)' : 'rgba(255, 107, 53, 0.2)';
+                        e.currentTarget.style.borderColor = borderColor;
+                        e.currentTarget.style.background = bgColor;
+                        e.currentTarget.style.transform = 'scale(1.05)';
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (day) {
+                        if (isLogged) {
+                          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(74, 222, 128, 0.1) 100%)';
+                          e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.6)';
+                        } else if (isPlanned) {
+                          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(234, 179, 8, 0.2) 0%, rgba(250, 204, 21, 0.1) 100%)';
+                          e.currentTarget.style.borderColor = 'rgba(234, 179, 8, 0.6)';
+                        } else {
+                          e.currentTarget.style.background = 'rgba(71, 85, 105, 0.2)';
+                          e.currentTarget.style.borderColor = 'rgba(71, 85, 105, 0.3)';
+                        }
+                        e.currentTarget.style.transform = 'scale(1)';
+                      }
+                    }}
+                  >
+                    {day && (
+                      <>
+                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#f1f5f9' }}>
+                          {day}
+                        </div>
+                        {isLogged && (
+                          <div style={{
+                            fontSize: '10px',
+                            fontWeight: '700',
+                            color: '#22c55e',
+                            background: 'rgba(34, 197, 94, 0.4)',
+                            padding: '2px 6px',
+                            borderRadius: '4px'
+                          }}>
+                            {session.pxi}
+                          </div>
+                        )}
+                        {isPlanned && (
+                          <div style={{
+                            fontSize: '9px',
+                            fontWeight: '700',
+                            color: '#eab308',
+                            background: 'rgba(234, 179, 8, 0.4)',
+                            padding: '2px 4px',
+                            borderRadius: '3px'
+                          }}>
+                            PLANNED
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {showModal && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              padding: '20px'
+            }}>
+              <div style={{
+                background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+                border: '1px solid rgba(255, 107, 53, 0.3)',
+                borderRadius: '16px',
+                padding: '24px',
+                maxWidth: '400px',
+                width: '100%',
+                backdropFilter: 'blur(10px)',
+                position: 'relative'
+              }}>
+                <button
+                  onClick={closeModal}
+                  style={{
+                    position: 'absolute',
+                    top: '12px',
+                    right: '12px',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    border: 'none',
+                    color: '#ef4444',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.3)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                  }}
+                >
+                  ✕
+                </button>
+
+                <h3 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '20px', marginTop: 0 }}>
+                  {selectedDate ? `${monthString} ${selectedDate}` : 'Add Session'}
+                </h3>
+
+                {!modalMode ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '0' }}>
+                    {!sessionForSelectedDate ? (
+                      <>
+                        <button
+                          onClick={() => setModalMode('logged')}
+                          style={{
+                            flex: 1,
+                            padding: '16px',
+                            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(74, 222, 128, 0.1) 100%)',
+                            border: '2px solid rgba(34, 197, 94, 0.4)',
+                            color: '#22c55e',
+                            borderRadius: '8px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            fontSize: '14px'
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.background = 'rgba(34, 197, 94, 0.15)';
+                            e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.6)';
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(74, 222, 128, 0.1) 100%)';
+                            e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+                          }}
+                        >
+                          Log PXI
+                        </button>
+                        <button
+                          onClick={() => setModalMode('planned')}
+                          style={{
+                            flex: 1,
+                            padding: '16px',
+                            background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.2) 0%, rgba(250, 204, 21, 0.1) 100%)',
+                            border: '2px solid rgba(234, 179, 8, 0.4)',
+                            color: '#eab308',
+                            borderRadius: '8px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            fontSize: '14px'
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.background = 'rgba(234, 179, 8, 0.15)';
+                            e.currentTarget.style.borderColor = 'rgba(234, 179, 8, 0.6)';
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(234, 179, 8, 0.2) 0%, rgba(250, 204, 21, 0.1) 100%)';
+                            e.currentTarget.style.borderColor = 'rgba(234, 179, 8, 0.4)';
+                          }}
+                        >
+                          Plan Session
+                        </button>
+                      </>
+                    ) : sessionForSelectedDate.pxi ? (
+                      <>
+                        <button
+                          onClick={() => setModalMode('logged')}
+                          style={{
+                            flex: 1,
+                            padding: '16px',
+                            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(74, 222, 128, 0.1) 100%)',
+                            border: '2px solid rgba(34, 197, 94, 0.4)',
+                            color: '#22c55e',
+                            borderRadius: '8px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            fontSize: '14px'
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.background = 'rgba(34, 197, 94, 0.15)';
+                            e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.6)';
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(74, 222, 128, 0.1) 100%)';
+                            e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+                          }}
+                        >
+                          Edit PXI
+                        </button>
+                        <button
+                          onClick={removeSession}
+                          style={{
+                            flex: 1,
+                            padding: '16px',
+                            background: 'rgba(239, 68, 68, 0.2)',
+                            border: '2px solid rgba(239, 68, 68, 0.4)',
+                            color: '#ef4444',
+                            borderRadius: '8px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            fontSize: '14px'
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
+                            e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                            e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => setModalMode('logged')}
+                          style={{
+                            flex: 1,
+                            padding: '16px',
+                            background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(74, 222, 128, 0.1) 100%)',
+                            border: '2px solid rgba(34, 197, 94, 0.4)',
+                            color: '#22c55e',
+                            borderRadius: '8px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            fontSize: '14px'
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.background = 'rgba(34, 197, 94, 0.15)';
+                            e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.6)';
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(74, 222, 128, 0.1) 100%)';
+                            e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+                          }}
+                        >
+                          Log PXI
+                        </button>
+                        <button
+                          onClick={removeSession}
+                          style={{
+                            flex: 1,
+                            padding: '16px',
+                            background: 'rgba(239, 68, 68, 0.2)',
+                            border: '2px solid rgba(239, 68, 68, 0.4)',
+                            color: '#ef4444',
+                            borderRadius: '8px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            fontSize: '14px'
+                          }}
+                          onMouseOver={(e) => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
+                            e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.6)';
+                          }}
+                          onMouseOut={(e) => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                            e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {modalMode === 'logged' && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <label style={{ fontSize: '12px', color: '#94a3b8', fontWeight: '600', display: 'block', marginBottom: '8px' }}>
+                          PXI Score
+                        </label>
+                        <input
+                          type="number"
+                          value={inputPXI}
+                          onChange={(e) => setInputPXI(e.target.value)}
+                          onKeyPress={handleKeyPress}
+                          autoFocus
+                          placeholder="Enter PXI score"
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            background: 'rgba(71, 85, 105, 0.3)',
+                            border: '1px solid rgba(34, 197, 94, 0.3)',
+                            borderRadius: '8px',
+                            color: '#f1f5f9',
+                            fontSize: '16px',
+                            boxSizing: 'border-box',
+                            outline: 'none',
+                            transition: 'border-color 0.2s'
+                          }}
+                          onFocus={(e) => e.target.style.borderColor = 'rgba(34, 197, 94, 0.6)'}
+                          onBlur={(e) => e.target.style.borderColor = 'rgba(34, 197, 94, 0.3)'}
+                        />
+                      </div>
+                    )}
+
+                    {modalMode === 'planned' && (
+                      <div style={{ marginBottom: '16px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
+                        Mark this date as a planned session
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => setModalMode(null)}
+                        style={{
+                          flex: 1,
+                          padding: '12px',
+                          background: 'rgba(71, 85, 105, 0.3)',
+                          border: '1px solid rgba(71, 85, 105, 0.4)',
+                          color: '#94a3b8',
+                          borderRadius: '8px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.background = 'rgba(71, 85, 105, 0.4)';
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.background = 'rgba(71, 85, 105, 0.3)';
+                        }}
+                      >
+                        Back
+                      </button>
+                      <button
+                        onClick={saveSession}
+                        style={{
+                          flex: 1,
+                          padding: '12px',
+                          background: modalMode === 'logged' 
+                            ? 'linear-gradient(135deg, #22c55e 0%, #4ade80 100%)'
+                            : 'linear-gradient(135deg, #eab308 0%, #facc15 100%)',
+                          border: 'none',
+                          color: '#000',
+                          borderRadius: '8px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.98)'}
+                        onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<BFTTracker />);
+  </script>
+</body>
+</html>
