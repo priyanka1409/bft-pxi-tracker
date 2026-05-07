@@ -6,6 +6,11 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="BFT Tracker">
+  <!-- to reload on the phone automatically -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <!--  -->
   <title>BFT PXI Tracker</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -82,6 +87,36 @@
           console.log('localStorage unavailable');
         }
       }, [sessions]);
+
+      useEffect(() => {
+        const checkForUpdates = async () => {
+          try {
+            // Fetches headers from GitHub to check the ETag (unique version ID)
+            const response = await fetch(window.location.href, {
+              method: 'HEAD',
+              cache: 'no-cache'
+            });
+            
+          const newETag = response.headers.get('etag') || response.headers.get('last-modified');
+          const oldETag = localStorage.getItem('site_version_tag');
+  
+          if (oldETag && newETag && oldETag !== newETag) {
+            localStorage.setItem('site_version_tag', newETag);
+            // Reloads the app instantly if the GitHub version is newer
+            window.location.reload(true);
+          } else if (newETag) {
+            localStorage.setItem('site_version_tag', newETag);
+          }
+        } catch (err) {
+          console.log('Update check failed', err);
+        }
+      };
+
+    checkForUpdates();
+    // Also check for updates when you switch back to the app from another app
+    window.addEventListener('focus', checkForUpdates);
+    return () => window.removeEventListener('focus', checkForUpdates);
+  }, []);
 
       const monthString = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
       const year = currentDate.getFullYear();
