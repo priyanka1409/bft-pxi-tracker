@@ -79,10 +79,12 @@
         }
       }, [sessions]);
 
-      const totalPXI = sessions.reduce((sum, s) => sum + (s.pxi ? s.pxi : 0), 0);
+      const totalPXI = sessions
+        .filter(s => s.pxi && s.date.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`))
+        .reduce((sum, s) => sum + s.pxi, 0);
       const remainingPXI = Math.max(0, TARGET_PXI - totalPXI);
-      const completedSessions = sessions.filter(s => s.pxi).length;
-      const plannedSessions = sessions.filter(s => !s.pxi).length;
+      const completedSessions = sessions.filter(s => s.pxi && s.date.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`)).length;
+      const plannedSessions = sessions.filter(s => !s.pxi && s.date.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`)).length;
       const totalPlannedForMonth = completedSessions + plannedSessions;
       const pendingSessions = plannedSessions;
       const avgNeeded = pendingSessions > 0 ? Math.ceil(remainingPXI / pendingSessions) : 0;
@@ -115,6 +117,21 @@
           setModalMode(null);
           const session = getSessionForDate(day);
           setInputPXI(session && session.pxi ? session.pxi.toString() : '');
+        }
+      };
+
+      const addPlannedSession = (day) => {
+        if (!day) return;
+        
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const existingIndex = sessions.findIndex(s => s.date === dateStr);
+        
+        if (existingIndex > -1 && !sessions[existingIndex].pxi) {
+          // Already planned, remove it
+          setSessions(sessions.filter((_, i) => i !== existingIndex));
+        } else if (existingIndex === -1) {
+          // Add as planned
+          setSessions([...sessions, { id: Date.now(), date: dateStr }]);
         }
       };
 
@@ -592,7 +609,10 @@
                           Log PXI
                         </button>
                         <button
-                          onClick={() => setModalMode('planned')}
+                          onClick={() => {
+                            addPlannedSession(selectedDate);
+                            closeModal();
+                          }}
                           style={{
                             flex: 1,
                             padding: '16px',
