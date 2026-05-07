@@ -79,6 +79,10 @@
         }
       }, [sessions]);
 
+      const monthString = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      
       const totalPXI = sessions
         .filter(s => s.pxi && s.date.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`))
         .reduce((sum, s) => sum + s.pxi, 0);
@@ -89,11 +93,7 @@
       const pendingSessions = plannedSessions;
       const avgNeeded = pendingSessions > 0 ? Math.ceil(remainingPXI / pendingSessions) : 0;
       const targetReached = totalPXI >= TARGET_PXI;
-
-      const monthString = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
-      const year = currentDate.getFullYear();
-      const month = currentDate.getMonth();
-
+      
       const firstDay = new Date(year, month, 1).getDay();
       const daysInMonth = new Date(year, month + 1, 0).getDate();
       const daysArray = [];
