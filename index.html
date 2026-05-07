@@ -84,7 +84,7 @@
       const month = currentDate.getMonth();
       
       const totalPXI = sessions
-        .filter(s => s.pxi && s.date.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`))
+        .filter(s => typeof s.pxi === 'number' && s.date.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`))
         .reduce((sum, s) => sum + s.pxi, 0);
       const remainingPXI = Math.max(0, TARGET_PXI - totalPXI);
       const completedSessions = sessions.filter(s => s.pxi && s.date.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`)).length;
@@ -143,13 +143,16 @@
         
         if (modalMode === 'logged') {
           if (!inputPXI || isNaN(inputPXI)) return;
+
+          // Use Number() to ensure math works correctly in .reduce()
+          const pxiValue = Number(inputPXI);
           
           if (existingIndex > -1) {
             const newSessions = [...sessions];
-            newSessions[existingIndex] = { ...newSessions[existingIndex], pxi: parseInt(inputPXI) };
+            newSessions[existingIndex] = { ...newSessions[existingIndex], pxi: pxiValue };
             setSessions(newSessions);
           } else {
-            setSessions([...sessions, { id: Date.now(), date: dateStr, pxi: parseInt(inputPXI) }]);
+            setSessions([...sessions, { id: Date.now(), date: dateStr, pxi: pxiValue }]);
           }
         } else if (modalMode === 'planned') {
           if (existingIndex > -1 && !sessions[existingIndex].pxi) {
