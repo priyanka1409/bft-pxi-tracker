@@ -40,7 +40,7 @@ A beautiful, mobile-optimized calendar app to track your monthly BFT workout sco
 ## Installation
 
 ### Option 1: Use the Live Version
-Just visit: `https://YOUR-USERNAME.github.io/bft-pxi-tracker`
+Just visit: `https://priyanka1409.github.io/bft-pxi-tracker/`
 
 ### Option 2: Add to iPhone Home Screen
 1. Open the link in Safari
@@ -87,7 +87,7 @@ Want to change colors? Look for the hex codes like `#ff6b35` (orange) and `#22c5
 
 **App not loading on phone?**
 - Make sure GitHub Pages is enabled in your repo Settings
-- Double-check the URL (should be `https://YOUR-USERNAME.github.io/bft-pxi-tracker`)
+- Double-check the URL (should be `https://priyanka1409.github.io/bft-pxi-tracker/`)
 - Try a hard refresh (Safari: swipe down from top, pull to refresh)
 
 ## License
